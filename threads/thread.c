@@ -188,6 +188,7 @@ tid_t
 thread_create (const char *name, int priority,
 		thread_func *function, void *aux) {
 	struct thread *t;
+	struct thread *curr = thread_current();
 	tid_t tid;
 
 	ASSERT (function != NULL);
@@ -214,6 +215,10 @@ thread_create (const char *name, int priority,
 
 	/* Add to run queue. */
 	thread_unblock (t);
+
+	if (list_entry(list_front(&ready_list), struct thread, elem)->priority > thread_current()->priority) {
+		thread_yield();
+	}
 
 	return tid;
 }
@@ -309,18 +314,32 @@ thread_yield (void) {
 
 	ASSERT (!intr_context ());
 
-	old_level = intr_disable ();
+	old_level = intr_disable (); 
 	if (curr != idle_thread)
-		list_push_back (&ready_list, &curr->elem);
+		// 이전 상태: list_push_back (&ready_list, &curr->elem);
+		list_insert_ordered(&ready_list, &curr->elem, priority_less, NULL); // 삽입 정렬로 yield와 동시에 올바른 위치에 삽입
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
-// 스레드의 우선순위를 넘겨받은 인자로 설정
+/*
+인자로 넘겨받은 new_priority로 현재 스레드의 우선순위 값을 변경함.
+
+우리가 해야 할 일
+1. 바뀐 우선순위 때문에 정렬을 새로 해야 함
+2. 만약 현재 스레드보다 높은 우선순위를 가진 스레드가 있다면 바로 yield
+3. 만약 현재 스레드가 가장 높다면 종료 후 yield?
+*/
 void
 thread_set_priority (int new_priority) {
-	thread_current ()->priority = new_priority;
+	struct thread *curr = thread_current(); // 현재 실행 중인 스레드
+	curr->priority = new_priority; // 현재 실행 중인 스레드의 priority를 nwe_priority로 변환
+ 
+	// ready_list의 첫번째(우선순위 기준 내림차순 정렬 되어 있음)가 현재 스레드보다 우선순위가 높으면 바로 yield
+	if(list_entry(list_front(&ready_list),struct thread, elem)->priority > curr->priority) {
+		thread_yield();
+	}
 }
 
 /* Returns the current thread's priority. */
