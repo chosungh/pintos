@@ -63,6 +63,7 @@ static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
 static bool priority_less(const struct list_elem *a, const struct list_elem *b, void *aux);
+static void priority_donation(struct lock *lock_);
 
 bool priority_less(const struct list_elem *a, const struct list_elem *b, void *aux) {
 	const struct thread *t1 = list_entry(a, struct thread, elem);
@@ -214,6 +215,7 @@ thread_create (const char *name, int priority,
 	t->tf.eflags = FLAG_IF;
 
 	/* Add to run queue. */
+
 	thread_unblock (t);
 
 	if (list_entry(list_front(&ready_list), struct thread, elem)->priority > thread_current()->priority) {
@@ -346,7 +348,27 @@ thread_set_priority (int new_priority) {
 // 스레드의 우선순위를 반환함
 int
 thread_get_priority (void) {
-	return thread_current ()->priority;
+	struct thread *curr = thread_current();
+
+	// 여기에 아마 priority_donate가 일어났는지 확인하는 과정을 거쳐야 할 거 같음
+
+	// if (curr->priority > curr->priority_before_donation) {
+	// 	return curr->priority;
+	// }
+	// else return curr->priority_before_donation;
+
+}
+
+void 
+priority_donation(struct lock *lock_) {
+	struct lock *lock = lock_; 
+	struct thread *curr = thread_current();
+
+	if (lock->holder->priority < curr->priority) {
+		lock->holder->priority = curr->priority;
+		thread_yield();
+	}
+	
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -437,6 +459,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	strlcpy (t->name, name, sizeof t->name);
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
+	t->priority_before_donation = priority;
 	t->magic = THREAD_MAGIC;
 }
 
