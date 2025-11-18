@@ -193,6 +193,13 @@ void lock_acquire(struct lock *lock)
 	ASSERT(!intr_context());
 	ASSERT(!lock_held_by_current_thread(lock));
 
+	struct thread *curr = thread_current();
+	if (lock->holder)
+	{
+		curr->lock_waitingfor = lock;
+		list_insert_ordered(&lock->holder->donations, &curr->donation_elem, donation_priority_less, NULL);
+		donate_priority();
+	}
 	sema_down(&lock->semaphore);
 	lock->holder = thread_current();
 }
@@ -227,6 +234,9 @@ void lock_release(struct lock *lock)
 	ASSERT(lock != NULL);
 	ASSERT(lock_held_by_current_thread(lock));
 
+	remove_donor(lock);
+	refresh_priority();
+
 	lock->holder = NULL;
 	sema_up(&lock->semaphore);
 }
@@ -247,6 +257,63 @@ struct semaphore_elem
 	struct list_elem elem;		/* List element. */
 	struct semaphore semaphore; /* This semaphore. */
 };
+
+bool donation_priority_less(const struct list_elem *a, const struct list_elem *b, void *aux)
+{
+	struct thread *ta = list_entry(a, struct thread, donation_elem);
+	struct thread *tb = list_entry(b, struct thread, donation_elem);
+
+	return ta->priority > tb->priority;
+}
+
+void donate_priority()
+{
+	struct thread *curr = thread_current();
+
+	for (int i = 0; i < 8; i++)
+	{
+		if (!curr->lock_waitingfor)
+		{
+			break;
+		}
+		struct thread *holder = curr->lock_waitingfor->holder;
+		holder->priority = curr->priority;
+		curr = holder;
+	}
+}
+
+void refresh_priority(void)
+{
+	struct thread *curr = thread_current();
+	curr->priority = curr->init_priority;
+
+	if (!list_empty(&curr->donations))
+	{
+		list_sort(&curr->donations, donation_priority_less, NULL);
+
+		struct thread *f = list_entry(list_front(&curr->donations), struct thread, donation_elem);
+		if (f->priority > curr->priority)
+		{
+			curr->priority = f->priority;
+		}
+	}
+}
+
+void remove_donor(struct lock *lock)
+{
+	struct thread *curr = thread_current();
+	struct list_elem *e = list_begin(&curr->donations);
+
+	while (e != list_end(&curr->donations))
+	{
+		struct thread *t = list_entry(e, struct thread, donation_elem);
+		if (t->lock_waitingfor == lock)
+		{
+			list_remove(&t->donation_elem);
+		}
+		e = list_next(e);
+	}
+}
 
 bool waiter_priority_less(const struct list_elem *a, const struct list_elem *b, void *aux)
 {

@@ -319,12 +319,23 @@ void thread_yield(void)
 	intr_set_level(old_level);
 }
 
+void thread_preempt(void)
+{
+	if (!list_empty(&ready_list) &&
+		thread_current()->priority < list_entry(list_front(&ready_list), struct thread, elem)->priority)
+	{
+		thread_yield();
+	}
+}
+
 /* Sets the current thread's priority to NEW_PRIORITY. */
 // 스레드의 우선순위를 넘겨받은 인자로 설정
 void thread_set_priority(int new_priority)
 {
-	thread_current()->priority = new_priority;
-	thread_yield();
+	thread_current()->init_priority = new_priority;
+
+	refresh_priority();
+	thread_preempt();
 }
 
 /* Returns the current thread's priority. */
@@ -425,6 +436,9 @@ init_thread(struct thread *t, const char *name, int priority)
 	strlcpy(t->name, name, sizeof t->name);
 	t->tf.rsp = (uint64_t)t + PGSIZE - sizeof(void *);
 	t->priority = priority;
+	t->init_priority = priority;
+	t->lock_waitingfor = NULL;
+	list_init(&t->donations);
 	t->magic = THREAD_MAGIC;
 }
 
